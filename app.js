@@ -544,7 +544,7 @@ const lessons = {
 
   renderList() {
     const saved = this.saved();
-    $("#lessons").replaceChildren(...LESSONS.map(l => {
+    const card = l => {
       const vals = Object.values(saved[l.id] || {});
       const scored = vals.filter(v => v >= 0);
       const meta = !vals.length ? `${l.items.length} sentences`
@@ -552,14 +552,30 @@ const lessons = {
       const bar = el("i");
       bar.style.width = (vals.length / l.items.length * 100) + "%";
       const a = el("a", { className: "card", href: "#lesson" },
-        el("div", { className: "q-meta", textContent: l.level }),
         el("h3", { textContent: l.title }),
         el("p", { textContent: l.blurb }),
         el("div", { className: "bar" }, bar),
         el("p", { className: "note", textContent: meta }));
       a.dataset.lesson = l.id;
       return a;
+    };
+    // One group per part of the test, in test order.
+    const groups = [
+      ["Part 1", "Part 1 · Familiar topics", "Short answers about yourself and everyday life."],
+      ["Part 2", "Part 2 · The long turn", "Each lesson is a complete model answer to a cue card."],
+      ["Part 3", "Part 3 · Discussion", "Longer, more abstract answers and the language to build them."],
+      ["Core skills", "Core skills", "Pronunciation, fluency and grammar range."]
+    ];
+    $("#lessons").replaceChildren(...groups.flatMap(([level, title, blurb]) => {
+      const list = LESSONS.filter(l => l.level === level);
+      const done = list.filter(l => Object.keys(saved[l.id] || {}).length >= l.items.length).length;
+      return [
+        el("h2", { textContent: title }),
+        el("p", { className: "note", textContent: `${blurb} ${list.length} lessons${done ? `, ${done} completed` : ""}.` }),
+        el("div", { className: "cards" }, ...list.map(card))
+      ];
     }));
+    $("#lesson-count").textContent = `${LESSONS.length} lessons · ${LESSONS.reduce((n, l) => n + l.items.length, 0)} model sentences`;
   },
 
   open(id) {
@@ -688,7 +704,7 @@ const lessons = {
     $("#ln-rec").textContent = "■ Stop";
     $("#ln-rec").classList.add("rec");
     this.say("Recording… say the sentence, then press Stop.");
-    this.timer = setTimeout(() => this.stop(), 15000);
+    this.timer = setTimeout(() => this.stop(), 25000);
   },
   stop() {
     if (!this.active) return;

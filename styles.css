@@ -91,3 +91,6 @@ audio { width: 100%; margin-top: 12px; }
 .num { width: 24px; height: 24px; border-radius: 50%; background: var(--soft); color: var(--accent); font-weight: 700; font-size: .82rem; display: grid; place-items: center; }
 #ln-mine { margin-top: 10px; }
 #ln-mine audio { margin-top: 4px; }
+#lessons h2 { margin-bottom: 2px; }
+#lessons > .note { margin: 0 0 4px; }
+#lessons .cards { margin-top: 12px; }

@@ -8,7 +8,7 @@ ver=3.8.1
 model=Xenova/whisper-tiny.en
 
 mkdir -p "$out/vendor" "$out/models/$model/onnx"
-cp index.html styles.css data.js app.js whisper-worker.js "$out/"
+cp index.html styles.css data.js lessons.js app.js whisper-worker.js "$out/"
 
 get() { [ -s "$2" ] || curl -fsSL --retry 3 -o "$2" "$1"; }
 
