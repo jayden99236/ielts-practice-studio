@@ -49,12 +49,17 @@ document.addEventListener("click", e => {
 });
 
 /* ---------- text to speech ---------- */
+// The Android app provides the phone's own voice through this bridge (web views have no speechSynthesis).
+const NATIVE = window.AndroidTTS;
+const IN_APP = !!NATIVE;
+let ttsDone = {}, ttsId = 0;
+window.__ttsDone = id => { const f = ttsDone[id]; delete ttsDone[id]; f && f(); };
 const tts = {
-  ok: "speechSynthesis" in window,
+  ok: IN_APP || "speechSynthesis" in window,
   voices: [],
   run: 0,
   load() {
-    if (!this.ok) return;
+    if (!this.ok || IN_APP) return;
     this.voices = speechSynthesis.getVoices().filter(v => /^en[-_]/i.test(v.lang));
   },
   voice(lang, index = 0) {
@@ -62,7 +67,11 @@ const tts = {
     const pool = pref.length > index ? pref : [...pref, ...this.voices.filter(v => !pref.includes(v))];
     return pool[index % Math.max(pool.length, 1)];
   },
-  stop() { this.run++; if (this.ok) speechSynthesis.cancel(); },
+  stop() {
+    this.run++;
+    ttsDone = {};
+    if (IN_APP) NATIVE.stop(); else if (this.ok) speechSynthesis.cancel();
+  },
   // lines: [speaker, text][]; speakers get different voices (or pitch if only one voice exists)
   play(lines, { rate = 0.95, lang = "en-GB", onProgress, onDone } = {}) {
     if (!this.ok) return;
@@ -75,20 +84,27 @@ const tts = {
       onProgress && onProgress(i, lines.length);
       if (i >= lines.length) { onDone && onDone(); return; }
       const [who, text] = lines[i++];
-      const u = new SpeechSynthesisUtterance(text);
       const idx = speakers.indexOf(who);
+      const gap = speakers.length > 1 ? 250 : 350;
+      if (IN_APP) {
+        const id = "u" + (++ttsId);
+        ttsDone[id] = () => setTimeout(next, gap);
+        NATIVE.speak(text, rate, idx ? 1.3 : 1, lang, id);
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(text);
       const v = this.voice(lang, idx);
       if (v) { u.voice = v; u.lang = v.lang; } else u.lang = lang;
       u.rate = rate;
       u.pitch = idx && this.voices.length < 2 ? 1.35 : 1;
-      u.onend = u.onerror = () => setTimeout(next, speakers.length > 1 ? 250 : 350);
+      u.onend = u.onerror = () => setTimeout(next, gap);
       speechSynthesis.speak(u);
     };
     next();
   }
 };
 tts.load();
-if (tts.ok) speechSynthesis.onvoiceschanged = () => tts.load();
+if (tts.ok && !IN_APP) speechSynthesis.onvoiceschanged = () => tts.load();
 
 /* ---------- speaking ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -100,6 +116,13 @@ const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 // Fallback transcription: the recording is transcribed on this device by a model in a worker.
 const whisper = {
   worker: null,
+  // Inside the Android app everything is bundled, so nothing is fetched from the internet.
+  cfg() {
+    const base = new URL(".", location.href).href;
+    return IN_APP
+      ? { local: true, lib: base + "vendor/transformers.min.js", wasm: base + "vendor/", models: base + "models/", model: "Xenova/whisper-tiny.en" }
+      : { lib: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1", model: "Xenova/whisper-base.en" };
+  },
   async run(blob, onStatus) {
     const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
@@ -109,13 +132,13 @@ const whisper = {
     return new Promise((res, rej) => {
       this.worker.onmessage = e => {
         const d = e.data;
-        if (d.type === "load") onStatus(`Downloading the speech model (first time only, about 80 MB)… ${d.pct}%`);
+        if (d.type === "load") onStatus(IN_APP ? `Loading the speech model… ${d.pct}%` : `Downloading the speech model (first time only, about 80 MB)… ${d.pct}%`);
         else if (d.type === "busy") onStatus("Transcribing your answer on this device…");
         else if (d.type === "done") res(d.text);
         else rej(new Error(d.message));
       };
       this.worker.onerror = e => { this.worker = null; rej(new Error(e.message || "the speech model could not be loaded")); };
-      this.worker.postMessage({ audio }, [audio.buffer]);
+      this.worker.postMessage({ audio, cfg: this.cfg() }, [audio.buffer]);
     });
   }
 };
@@ -498,7 +521,10 @@ const missing = [];
 if (!useSR && !canRecord) missing.push("microphone input");
 if (!tts.ok) missing.push("audio playback");
 $("#support").textContent = missing.length ? "This browser does not support " + missing.join(" or ") + "."
-  : !useSR ? "In this browser your spoken answers are transcribed after you stop, by a speech model that runs on your device (one-time download of about 80 MB)." : "";renderProgress();
+  : IN_APP ? "Offline app: everything runs on your phone. Spoken answers are transcribed after you stop."
+  : !useSR ? "In this browser your spoken answers are transcribed after you stop, by a speech model that runs on your device (one-time download of about 80 MB)." : "";if (IN_APP) $$(".web-only").forEach(n => n.remove());
+window.ieltsWhisper = whisper;
+renderProgress();
 speaking.setPart(1);
 listening.load(0);
 dictation.next();

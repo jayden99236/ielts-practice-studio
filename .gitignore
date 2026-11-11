@@ -1,0 +1,6 @@
+offline-test/
+.claude/
+android/app/src/main/assets/
+android/.gradle/
+android/app/build/
+android/build/
