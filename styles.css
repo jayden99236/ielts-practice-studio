@@ -77,3 +77,17 @@ audio { width: 100%; margin-top: 12px; }
 .tok { padding: 2px 5px; border-radius: 5px; background: var(--bg); margin-right: 3px; }
 .tok.no { text-decoration: underline wavy; font-weight: 600; }
 .foot { color: var(--muted); font-size: .8rem; padding-top: 16px; padding-bottom: 32px; border-top: 1px solid var(--line); }
+.back { display: inline-block; color: var(--muted); text-decoration: none; font-weight: 600; font-size: .92rem; margin-bottom: 10px; }
+.lesson-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.lesson-head h1 { margin: 2px 0 0; }
+#lessons .card .bar { margin: 12px 0 6px; }
+#lessons .card .note { margin: 0; }
+.prompt { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.btn.small { padding: 4px 9px; }
+#ln-text { font-size: clamp(1.25rem, 3.6vw, 1.6rem); line-height: 1.6; margin: 4px 0 8px; }
+#ln-text .tok { background: none; padding: 0; margin-right: .28em; display: inline-block; }
+.steps { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 16px; }
+.step { display: flex; align-items: center; gap: 8px; }
+.num { width: 24px; height: 24px; border-radius: 50%; background: var(--soft); color: var(--accent); font-weight: 700; font-size: .82rem; display: grid; place-items: center; }
+#ln-mine { margin-top: 10px; }
+#ln-mine audio { margin-top: 4px; }

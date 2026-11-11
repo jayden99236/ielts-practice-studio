@@ -144,20 +144,105 @@ const DICTATION = [
   "Regular exercise improves both memory and concentration."
 ];
 
-// Listen & repeat: natural spoken sentences that are useful in the speaking test.
-const REPEAT = [
-  "In my opinion, the advantages outweigh the disadvantages.",
-  "I'd say it depends on the situation.",
-  "That's an interesting question; I've never really thought about it.",
-  "On the one hand it saves time, but on the other hand it can be expensive.",
-  "What I enjoy most about my job is working with other people.",
-  "I grew up in a small town near the coast.",
-  "If I had more free time, I would learn to play the guitar.",
-  "It has changed a great deal over the last ten years.",
-  "As far as I'm concerned, education should be free for everyone.",
-  "I'm not entirely sure, but I think it was about three years ago.",
-  "The main reason is that people are much busier than they used to be.",
-  "To be honest, I prefer reading to watching television.",
-  "There are several reasons why this has become more popular.",
-  "I would definitely recommend it to anyone who enjoys history."
+// Lessons: each item is a model sentence to listen to, repeat and compare.
+// "q" is an optional examiner question that the model sentence answers.
+const LESSONS = [
+  {
+    id: "about-you", level: "Part 1", title: "About you",
+    blurb: "Model answers to the questions that open almost every speaking test.",
+    items: [
+      { q: "Do you work, or are you a student?", a: "I'm a student at the moment, and I'm in my final year." },
+      { q: "Where are you from?", a: "I come from a medium-sized city in the south of the country." },
+      { q: "What do you like about your hometown?", a: "What I like most is that everything is within walking distance." },
+      { q: "Do you live in a house or a flat?", a: "I live in a small flat on the third floor with my family." },
+      { q: "What do you do in your free time?", a: "I usually go for a run, or I meet my friends for coffee." },
+      { q: "Do you enjoy cooking?", a: "To be honest, I'm not very good at it, but I'm trying to learn." },
+      { q: "How do you travel to work or school?", a: "I normally take the bus, because it's cheaper than driving." },
+      { q: "What kind of music do you like?", a: "I listen to all sorts of music, but mostly pop and jazz." }
+    ]
+  },
+  {
+    id: "everyday", level: "Part 1", title: "Everyday topics",
+    blurb: "Short, natural answers about habits, likes and dislikes.",
+    items: [
+      { q: "How often do you use your phone?", a: "Probably more than I should, especially in the evenings." },
+      { q: "What's your favourite season?", a: "I'd have to say autumn, because the weather is cool and the colours are beautiful." },
+      { q: "Did you enjoy reading as a child?", a: "Yes, I used to read every night before I went to sleep." },
+      { q: "Do you prefer mornings or evenings?", a: "I'm definitely a morning person; I get most of my work done before lunch." },
+      { q: "How do you keep fit?", a: "I try to go swimming twice a week, although I don't always manage it." },
+      { q: "Do you like shopping?", a: "It depends. I enjoy buying books, but I can't stand shopping for clothes." },
+      { q: "What do you usually eat for breakfast?", a: "Just some toast and a cup of tea, as I'm always in a hurry." },
+      { q: "Is there anything you'd like to learn?", a: "I've always wanted to learn how to play the piano." }
+    ]
+  },
+  {
+    id: "story", level: "Part 2", title: "Telling a story",
+    blurb: "Sentence patterns for the two-minute long turn.",
+    items: [
+      { a: "I'd like to talk about a trip I took a couple of years ago." },
+      { a: "It was the first time I had ever travelled abroad on my own." },
+      { a: "As soon as we arrived, it started to rain heavily." },
+      { a: "What I remember most is how friendly the local people were." },
+      { a: "At first I was nervous, but after a while I began to relax." },
+      { a: "It turned out to be one of the best experiences of my life." },
+      { a: "If I had the chance, I would definitely go back." },
+      { a: "Looking back, I learned a great deal from that experience." }
+    ]
+  },
+  {
+    id: "opinions", level: "Part 3", title: "Giving opinions",
+    blurb: "Ways to state a view clearly in the discussion.",
+    items: [
+      { a: "In my opinion, the advantages outweigh the disadvantages." },
+      { a: "As far as I'm concerned, education should be free for everyone." },
+      { a: "I tend to think that technology has made our lives easier." },
+      { a: "It seems to me that young people are under a lot of pressure." },
+      { a: "I'm convinced that reading is the best way to learn new words." },
+      { a: "From my point of view, it depends on the individual." },
+      { a: "I strongly believe that governments should invest more in public transport." },
+      { a: "Personally, I'd rather live in the countryside than in a big city." }
+    ]
+  },
+  {
+    id: "linking", level: "Part 3", title: "Reasons, examples and contrast",
+    blurb: "Linking language that makes longer answers hang together.",
+    items: [
+      { a: "The main reason is that people are much busier than they used to be." },
+      { a: "For example, many of my friends now work from home." },
+      { a: "On the one hand it saves time, but on the other hand it can be expensive." },
+      { a: "Although it's convenient, it isn't always reliable." },
+      { a: "As a result, fewer people are buying newspapers." },
+      { a: "This is mainly because prices have risen so quickly." },
+      { a: "Compared with the past, travelling is far more affordable." },
+      { a: "That's why I think the situation will improve in the future." }
+    ]
+  },
+  {
+    id: "time", level: "Core skills", title: "Buying time and clarifying",
+    blurb: "What to say when you need a moment or did not catch the question.",
+    items: [
+      { a: "That's an interesting question; I've never really thought about it." },
+      { a: "Let me think about that for a moment." },
+      { a: "I'm not entirely sure, but I think it was about three years ago." },
+      { a: "Sorry, could you repeat the question, please?" },
+      { a: "What I mean is that it's different for everyone." },
+      { a: "It's hard to say, but I suppose it depends on the situation." },
+      { a: "To put it another way, we need more time." },
+      { a: "I'm afraid I don't know much about that, but I'd guess it's quite common." }
+    ]
+  },
+  {
+    id: "sounds", level: "Core skills", title: "Tricky sounds",
+    blurb: "Sentences packed with sounds and stress patterns learners often find hard.",
+    items: [
+      { a: "I think these three things are worth thinking about." },
+      { a: "She usually wears very comfortable clothes." },
+      { a: "We really value the wonderful view of the village." },
+      { a: "Laura rarely arrives early on Friday." },
+      { a: "He lives near the beach and leaves at six." },
+      { a: "I walked to work and worked until four." },
+      { a: "The photographer took a beautiful photograph." },
+      { a: "Wednesday is probably the most comfortable day." }
+    ]
+  }
 ];

@@ -23,23 +23,25 @@ function renderProgress() {
   const p = store.get();
   const best = Object.values(p.listening || {});
   const items = [
-    [p.answers || 0, "spoken answers"],
+    [Object.values(p.lessons || {}).reduce((n, l) => n + Object.keys(l).length, 0), "sentences practised"],
+    [p.answers || 0, "test answers"],
     [fmt(p.speakSecs || 0), "speaking time"],
     [best.length ? `${best.length}/${LISTENING.length}` : "0", "listening tests done"],
-    [p.dictBest != null ? p.dictBest + "%" : "–", "best dictation"],
-    [p.repBest != null ? p.repBest + "%" : "–", "best repeat"]
+    [p.dictBest != null ? p.dictBest + "%" : "–", "best dictation"]
   ];
   $("#progress").replaceChildren(...items.map(([v, l]) => el("div", { className: "stat" }, el("b", { textContent: v }), el("span", { textContent: l }))));
 }
 
 /* ---------- tabs ---------- */
 function showTab(id) {
-  if (!$("#" + id + ".tab")) id = "home";
+  if (!$("#" + id + ".tab") || (id === "lesson" && !lessons.cur)) id = "home";
   $$(".tab").forEach(t => t.classList.toggle("on", t.id === id));
-  $$("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === id));
+  $$("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === (id === "lesson" ? "home" : id)));
   tts.stop();
   if (speaking.active) speaking.stop();
-  if (repeat.active) repeat.stop();
+  if (lessons.active) lessons.stop();
+  $("#ln-audio").pause();
+  if (id === "home") lessons.renderList();
   window.scrollTo(0, 0);
 }
 document.addEventListener("click", e => {
@@ -518,7 +520,7 @@ $("#dc-slow").onclick = () => dictation.play(0.65);
 $("#dc-next").onclick = () => dictation.next();
 $("#dc-form").onsubmit = e => { e.preventDefault(); dictation.check(); };
 
-/* ---------- listen & repeat ---------- */
+/* ---------- lessons: listen, repeat, compare ---------- */
 // Which words of `want` appear, in order, in `got` (longest common subsequence).
 function heard(want, got) {
   const m = want.length, n = got.length;
@@ -532,39 +534,126 @@ function heard(want, got) {
   }
   return hit;
 }
-const repeat = {
-  order: [], pos: -1, active: false, media: null, rec: null, final: "", chunks: [], timer: null,
-  say(t) { $("#rp-status").textContent = t; },
-  sentence() { return REPEAT[this.order[this.pos]]; },
-  next() {
+const lessons = {
+  cur: null, pos: 0, active: false, media: null, rec: null, final: "", chunks: [], timer: null,
+  blobs: {},   // this visit's recordings, by sentence number
+  marks: {},   // this visit's word-by-word results, by sentence number
+  say(t) { $("#ln-status").textContent = t; },
+  saved() { return store.get().lessons || {}; },
+  lang() { return $("#sp-lang").value; },
+
+  renderList() {
+    const saved = this.saved();
+    $("#lessons").replaceChildren(...LESSONS.map(l => {
+      const vals = Object.values(saved[l.id] || {});
+      const scored = vals.filter(v => v >= 0);
+      const meta = !vals.length ? `${l.items.length} sentences`
+        : `${vals.length}/${l.items.length} practised` + (scored.length ? ` · ${Math.round(scored.reduce((a, b) => a + b, 0) / scored.length)}% clear` : "");
+      const bar = el("i");
+      bar.style.width = (vals.length / l.items.length * 100) + "%";
+      const a = el("a", { className: "card", href: "#lesson" },
+        el("div", { className: "q-meta", textContent: l.level }),
+        el("h3", { textContent: l.title }),
+        el("p", { textContent: l.blurb }),
+        el("div", { className: "bar" }, bar),
+        el("p", { className: "note", textContent: meta }));
+      a.dataset.lesson = l.id;
+      return a;
+    }));
+  },
+
+  open(id) {
+    const l = LESSONS.find(x => x.id === id);
+    if (!l) return;
+    this.cur = l;
+    this.blobs = {};
+    this.marks = {};
+    const done = this.saved()[l.id] || {};
+    const first = l.items.findIndex((_, i) => !(i in done));
+    this.pos = first < 0 ? 0 : first;
+    history.replaceState(null, "", "#lesson");
+    showTab("lesson");
+    this.show(true);
+  },
+  item() { return this.cur.items[this.pos]; },
+
+  show(autoplay) {
     if (this.active) this.stop();
     tts.stop();
-    if (++this.pos >= this.order.length) {
-      this.order = REPEAT.map((_, i) => i).sort(() => Math.random() - 0.5);
-      this.pos = 0;
-    }
-    $("#rp-count").textContent = `Sentence ${this.pos + 1} of ${this.order.length}`;
-    $("#rp-text").replaceChildren(this.sentence());
-    $("#rp-audio").hidden = true;
-    $("#rp-score").textContent = "";
-    this.say("Listen first, then record yourself saying the same sentence.");
+    const l = this.cur, it = this.item(), n = l.items.length;
+    $("#ln-level").textContent = l.level;
+    $("#ln-title").textContent = l.title;
+    $("#ln-step").textContent = `${this.pos + 1} / ${n}`;
+    $("#ln-bar").style.width = ((this.pos + 1) / n * 100) + "%";
+    $("#ln-prompt").hidden = !it.q;
+    $("#ln-q").textContent = it.q || "";
+    this.renderText();
+    const a = $("#ln-audio"), blob = this.blobs[this.pos];
+    if (a.src) { URL.revokeObjectURL(a.src); a.removeAttribute("src"); }
+    if (blob) a.src = URL.createObjectURL(blob);
+    $("#ln-mine").hidden = !blob;
+    $("#ln-compare").disabled = !blob;
+    $("#ln-prev").disabled = this.pos === 0;
+    $("#ln-next").textContent = this.pos === n - 1 ? "Finish lesson ✓" : "Next →";
+    this.say("Listen to the model, then record yourself saying the same sentence.");
+    if (autoplay && $("#ln-auto").checked) this.listen(0.95, true);
   },
-  listen(rate) { tts.play([["A", this.sentence()]], { rate, lang: $("#sp-lang").value }); },
+  // The sentence, coloured word by word once a recording has been checked.
+  renderText() {
+    const it = this.item(), hit = this.marks[this.pos];
+    const best = (this.saved()[this.cur.id] || {})[this.pos];
+    if (!hit) {
+      $("#ln-text").replaceChildren(it.a);
+      $("#ln-score").textContent = best >= 0 ? `Best so far: ${best}%` : "";
+      return;
+    }
+    let k = 0;
+    $("#ln-text").replaceChildren(...it.a.split(/\s+/).map(w => {
+      const n = toks(w).length, ok = hit.slice(k, k + n).every(Boolean);
+      k += n;
+      return el("span", { className: "tok " + (ok ? "ok" : "no"), textContent: w });
+    }));
+    const pct = Math.round(hit.filter(Boolean).length / hit.length * 100);
+    $("#ln-score").textContent = pct === 100 ? "Every word was clear – 100%" : `${pct}% of the words were understood`;
+  },
+
+  listen(rate, withQuestion) {
+    const it = this.item();
+    const lines = withQuestion && it.q ? [["B", it.q], ["A", it.a]] : [["A", it.a]];
+    this.say("Playing the model…");
+    tts.play(lines, { rate, lang: this.lang(), onDone: () => this.say("Your turn: record yourself saying it.") });
+  },
+  // Model first, then your own recording, back to back.
+  compare() {
+    if (!this.blobs[this.pos]) return;
+    const a = $("#ln-audio");
+    a.pause();
+    this.say("Model…");
+    tts.play([["A", this.item().a]], { rate: 0.95, lang: this.lang(), onDone: () => {
+      this.say("You…");
+      a.currentTime = 0;
+      a.onended = () => { a.onended = null; this.say("Hear a difference? Record again, or move on."); };
+      a.play().catch(() => {});
+    } });
+  },
+
   async start() {
     if (!canRecord) { this.say("This browser cannot record from the microphone."); return; }
     tts.stop();
+    $("#ln-audio").pause();
     this.active = true;
     this.chunks = [];
     this.final = "";
-    $("#rp-score").textContent = "";
-    $("#rp-text").replaceChildren(this.sentence());
+    const l = this.cur, pos = this.pos;
     let stream;
     try {
       const id = $("#sp-mic").value;
       stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true });
     } catch (e) {
       this.active = false;
-      this.say(e.name === "NotAllowedError" ? "Microphone blocked. Allow it for this site and try again." : `The microphone could not be opened (${e.name}).`);
+      this.say(e.name === "NotAllowedError" ? "Microphone blocked. Allow it for this site and try again."
+        : e.name === "NotFoundError" ? "No microphone was found."
+        : `The microphone could not be opened (${e.name}).`);
       return;
     }
     if (!this.active) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -574,24 +663,30 @@ const repeat = {
       stream.getTracks().forEach(t => t.stop());
       if (!this.chunks.length) { this.say("Nothing was recorded. Try again."); return; }
       const blob = new Blob(this.chunks, { type: mr.mimeType });
-      const a = $("#rp-audio");
-      if (a.src) URL.revokeObjectURL(a.src);
-      a.src = URL.createObjectURL(blob);
-      a.hidden = false;
-      setTimeout(() => this.score(blob), 500); // let the live recogniser deliver its last words
+      if (l !== this.cur) return;
+      this.blobs[pos] = blob;
+      delete this.marks[pos];
+      if (pos === this.pos) {
+        const a = $("#ln-audio");
+        if (a.src) URL.revokeObjectURL(a.src);
+        a.src = URL.createObjectURL(blob);
+        $("#ln-mine").hidden = false;
+        $("#ln-compare").disabled = false;
+      }
+      setTimeout(() => this.score(blob, l, pos), 500); // let the live recogniser deliver its last words
     };
     mr.start();
     // Live recognition runs alongside the recording where the browser has it (desktop Chrome, Edge, Safari).
     if (useSR && !isMobile) {
       const rec = this.rec = new SR();
-      rec.lang = $("#sp-lang").value;
+      rec.lang = this.lang();
       rec.continuous = true;
       rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) this.final += e.results[i][0].transcript + " "; };
       rec.onerror = e => { if (["network", "service-not-allowed", "language-not-supported"].includes(e.error)) useSR = false; };
       try { rec.start(); } catch {}
     }
-    $("#rp-rec").textContent = "■ Stop";
-    $("#rp-rec").classList.add("rec");
+    $("#ln-rec").textContent = "■ Stop";
+    $("#ln-rec").classList.add("rec");
     this.say("Recording… say the sentence, then press Stop.");
     this.timer = setTimeout(() => this.stop(), 15000);
   },
@@ -603,32 +698,51 @@ const repeat = {
     this.rec = null;
     try { this.media && this.media.state !== "inactive" && this.media.stop(); } catch {}
     this.media = null;
-    $("#rp-rec").textContent = "🎤 Record yourself";
-    $("#rp-rec").classList.remove("rec");
+    $("#ln-rec").textContent = "🎤 Record";
+    $("#ln-rec").classList.remove("rec");
   },
-  async score(blob) {
-    const target = this.sentence();
+  async score(blob, l, pos) {
+    const here = () => l === this.cur && pos === this.pos;
     let text = this.final.trim();
     if (!text && !useSR) {
-      $("#rp-rec").disabled = true;
-      try { text = (await whisper.run(blob, t => this.say(t))).replace(/\[[^\]]*\]|\([^)]*\)/g, " ").trim(); } catch {}
-      $("#rp-rec").disabled = false;
-      if (target !== this.sentence()) return; // moved on while transcribing
+      $("#ln-rec").disabled = true;
+      try { text = (await whisper.run(blob, t => here() && this.say(t))).replace(/\[[^\]]*\]|\([^)]*\)/g, " ").trim(); } catch {}
+      $("#ln-rec").disabled = false;
     }
-    if (!text) { this.say("Now play your recording and the model sentence, and compare them by ear."); return; }
-    const want = toks(target), hit = heard(want, toks(text));
-    const pct = Math.round(hit.filter(Boolean).length / want.length * 100);
-    const shown = target.replace(/[.,;]/g, "").split(/\s+/);
-    $("#rp-text").replaceChildren(...shown.map((w, i) => el("span", { className: "tok " + (hit[i] ? "ok" : "no"), textContent: w })));
-    $("#rp-score").textContent = pct === 100 ? "Every word was clear – 100%" : `${pct}% of the words were understood`;
-    this.say(pct === 100 ? "Now compare the rhythm and stress of your recording with the model." : "Underlined words were not recognised. Listen to the model again and compare with your recording.");
-    store.set({ repBest: Math.max(pct, store.get().repBest || 0) });
-  }
+    const all = this.saved(), done = { ...(all[l.id] || {}) };
+    let pct = -1;
+    if (text) {
+      const want = toks(l.items[pos].a), hit = heard(want, toks(text));
+      pct = Math.round(hit.filter(Boolean).length / want.length * 100);
+      if (l === this.cur) this.marks[pos] = hit;
+    }
+    done[pos] = Math.max(pct, done[pos] ?? -1);
+    store.set({ lessons: { ...all, [l.id]: done } });
+    if (!here()) return;
+    this.renderText();
+    this.say(!text ? "Press Compare to hear the model and then yourself, back to back."
+      : pct === 100 ? "Clear! Press Compare to check your rhythm and stress against the model."
+      : "Underlined words were not recognised. Press Compare to hear the model and then yourself.");
+  },
+
+  next() {
+    if (this.pos < this.cur.items.length - 1) { this.pos++; this.show(true); return; }
+    history.replaceState(null, "", "#home");
+    showTab("home");
+  },
+  prev() { if (this.pos > 0) { this.pos--; this.show(true); } }
 };
-$("#rp-listen").onclick = () => repeat.listen(0.95);
-$("#rp-slow").onclick = () => repeat.listen(0.65);
-$("#rp-rec").onclick = () => repeat.active ? repeat.stop() : repeat.start();
-$("#rp-next").onclick = () => repeat.next();
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-lesson]");
+  if (c) { e.preventDefault(); lessons.open(c.dataset.lesson); }
+});
+$("#ln-listen").onclick = () => lessons.listen(0.95);
+$("#ln-slow").onclick = () => lessons.listen(0.65);
+$("#ln-hear-q").onclick = () => tts.play([["B", lessons.item().q]], { lang: lessons.lang() });
+$("#ln-rec").onclick = () => lessons.active ? lessons.stop() : lessons.start();
+$("#ln-compare").onclick = () => lessons.compare();
+$("#ln-next").onclick = () => lessons.next();
+$("#ln-prev").onclick = () => lessons.prev();
 
 /* ---------- start ---------- */
 const missing = [];
@@ -638,10 +752,10 @@ $("#support").textContent = missing.length ? "This browser does not support " + 
   : IN_APP ? "Offline app: everything runs on your phone. Spoken answers are transcribed after you stop."
   : !useSR ? "In this browser your spoken answers are transcribed after you stop, by a speech model that runs on your device (one-time download of about 80 MB)." : "";if (IN_APP) $$(".web-only").forEach(n => n.remove());
 window.ieltsWhisper = whisper;
+window.ieltsLessons = lessons;
 renderProgress();
 speaking.setPart(1);
 listening.load(0);
 dictation.next();
-repeat.next();
 showTab(location.hash.slice(1) || "home");
 })();
