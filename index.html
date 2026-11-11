@@ -78,7 +78,11 @@
       <span class="timer" id="sp-timer">0:00</span>
     </div>
     <div class="live" id="sp-status" aria-live="polite"></div>
-    <div class="meter-row"><span class="muted">Mic level</span><div class="bar"><i id="sp-meter"></i></div></div>
+    <div class="meter-row">
+      <select id="sp-mic" aria-label="Microphone"><option value="">Default microphone</option></select>
+      <span class="muted">Level</span><div class="bar"><i id="sp-meter"></i></div>
+    </div>
+    <div class="note" id="sp-micinfo">Click “Start answering” to open the microphone.</div>
   </div>
 
   <div class="panel">

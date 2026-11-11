@@ -156,9 +156,22 @@ const speaking = {
     $("#sp-status").textContent = "Listening… speak now.";
 
     // Keep a recording for playback on desktop (phones can't share the mic with speech recognition).
-    if (!/Android|iPhone|iPad/i.test(navigator.userAgent) && navigator.mediaDevices && window.MediaRecorder) {
+    const info = $("#sp-micinfo");
+    if (/Android|iPhone|iPad/i.test(navigator.userAgent)) info.textContent = "The level meter and playback are not available on phones and tablets.";
+    else if (!navigator.mediaDevices || !window.MediaRecorder) info.textContent = "This browser cannot open the microphone for the level meter.";
+    else {
+      info.textContent = "Waiting for the browser to open the microphone… if a permission prompt is showing, choose Allow.";
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const id = $("#sp-mic").value;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true });
+        const track = stream.getAudioTracks()[0];
+        info.textContent = `Microphone open: ${track && track.label || "unnamed device"}${track && track.muted ? " (muted by the system)" : ""}. Voice-to-text always uses your browser's default microphone.`;
+        try {
+          const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput" && d.deviceId);
+          const cur = track && track.getSettings().deviceId;
+          $("#sp-mic").replaceChildren(...devs.map(d => el("option", { value: d.deviceId, textContent: d.label || "Microphone" })));
+          if (cur) $("#sp-mic").value = cur;
+        } catch {}
         if (!this.active) { stream.getTracks().forEach(t => t.stop()); return; }
         this.media = new MediaRecorder(stream);
         this.media.ondataavailable = e => e.data.size && this.chunks.push(e.data);
@@ -178,9 +191,16 @@ const speaking = {
         this.ctx.createMediaStreamSource(stream).connect(an);
         this.buf = new Uint8Array(an.fftSize);
         this.analyser = an;
-        const track = stream.getAudioTracks()[0];
-        if (track) $("#sp-status").textContent = `Listening… speak now. (Microphone: ${track.label || "default"})`;
-      } catch (e) { this.media = null; this.micErr = e && e.name || "error"; }
+      } catch (e) {
+        this.media = null;
+        this.micErr = e && e.name || "error";
+        info.textContent = ({
+          NotAllowedError: "Microphone blocked. Allow it for this site (icon at the left of the address bar) and in Windows Settings → Privacy & security → Microphone, then reload.",
+          NotFoundError: "No microphone was found. Windows is not offering any input device to the browser: check Settings → System → Sound → Input.",
+          NotReadableError: "The microphone is busy or disabled. Close other apps using it (Teams, Zoom, Discord) and try again.",
+          OverconstrainedError: "That microphone is no longer available. Reload the page and pick another."
+        })[this.micErr] || `The microphone could not be opened (${this.micErr}).`;
+      }
     }
 
     const rec = this.rec = new SR();
