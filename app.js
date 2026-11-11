@@ -92,6 +92,33 @@ if (tts.ok) speechSynthesis.onvoiceschanged = () => tts.load();
 
 /* ---------- speaking ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Opera and Brave expose the recogniser but it never returns anything, so skip it there.
+let useSR = !!SR && !/OPR\/|Opera/.test(navigator.userAgent) && !navigator.brave;
+const canRecord = !!(navigator.mediaDevices && window.MediaRecorder);
+const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+// Fallback transcription: the recording is transcribed on this device by a model in a worker.
+const whisper = {
+  worker: null,
+  async run(blob, onStatus) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    ctx.close();
+    const audio = buf.getChannelData(0).slice();
+    if (!this.worker) this.worker = new Worker("whisper-worker.js", { type: "module" });
+    return new Promise((res, rej) => {
+      this.worker.onmessage = e => {
+        const d = e.data;
+        if (d.type === "load") onStatus(`Downloading the speech model (first time only, about 80 MB)… ${d.pct}%`);
+        else if (d.type === "busy") onStatus("Transcribing your answer on this device…");
+        else if (d.type === "done") res(d.text);
+        else rej(new Error(d.message));
+      };
+      this.worker.onerror = e => { this.worker = null; rej(new Error(e.message || "the speech model could not be loaded")); };
+      this.worker.postMessage({ audio }, [audio.buffer]);
+    });
+  }
+};
 const FILLERS = ["um", "uh", "er", "erm", "hmm", "you know", "i mean", "kind of", "sort of", "basically"];
 const LINKERS = ["because", "however", "although", "for example", "for instance", "on the other hand", "in addition", "therefore", "whereas", "moreover", "as a result", "despite", "in my opinion", "so that", "even though", "while", "unless", "which means"];
 const TARGET = { 1: [25, 70], 2: [180, 320], 3: [60, 140] };
@@ -140,7 +167,8 @@ const speaking = {
     }, 1000);
   },
   async begin() {
-    if (!SR) { $("#sp-status").textContent = "Voice input is not supported in this browser. Please use Chrome, Edge or Safari."; return; }
+    if (!useSR && !canRecord) { $("#sp-status").textContent = "This browser cannot use the microphone. Please update it or try another browser."; return; }
+    this.live = useSR;
     clearInterval(this.tick);
     tts.stop();
     this.final = "";
@@ -153,11 +181,12 @@ const speaking = {
     $("#sp-transcript").textContent = "";
     $("#sp-rec").textContent = "■ Stop";
     $("#sp-rec").classList.add("rec");
-    $("#sp-status").textContent = "Listening… speak now.";
+    $("#sp-status").textContent = this.live ? "Listening… speak now." : "Recording… speak now. Your transcript will appear when you stop.";
 
-    // Keep a recording for playback on desktop (phones can't share the mic with speech recognition).
+    // Record the answer for playback and fallback transcription
+    // (phones can't share the mic between a recording and live speech recognition).
     const info = $("#sp-micinfo");
-    if (/Android|iPhone|iPad/i.test(navigator.userAgent)) info.textContent = "The level meter and playback are not available on phones and tablets.";
+    if (isMobile && useSR) info.textContent = "The level meter and playback are not available on phones and tablets.";
     else if (!navigator.mediaDevices || !window.MediaRecorder) info.textContent = "This browser cannot open the microphone for the level meter.";
     else {
       info.textContent = "Waiting for the browser to open the microphone… if a permission prompt is showing, choose Allow.";
@@ -173,14 +202,15 @@ const speaking = {
           if (cur) $("#sp-mic").value = cur;
         } catch {}
         if (!this.active) { stream.getTracks().forEach(t => t.stop()); return; }
-        this.media = new MediaRecorder(stream);
-        this.media.ondataavailable = e => e.data.size && this.chunks.push(e.data);
-        this.media.onstop = () => {
+        const mr = this.media = new MediaRecorder(stream);
+        this.mime = mr.mimeType;
+        mr.ondataavailable = e => e.data.size && this.chunks.push(e.data);
+        mr.onstop = () => {
           stream.getTracks().forEach(t => t.stop());
           if (!this.chunks.length) return;
           const a = $("#sp-audio");
           if (a.src) URL.revokeObjectURL(a.src);
-          a.src = URL.createObjectURL(new Blob(this.chunks, { type: this.media.mimeType }));
+          a.src = URL.createObjectURL(new Blob(this.chunks, { type: mr.mimeType }));
           a.hidden = false;
         };
         this.media.start();
@@ -203,6 +233,7 @@ const speaking = {
       }
     }
 
+    if (this.live) {
     const rec = this.rec = new SR();
     rec.lang = $("#sp-lang").value;
     rec.continuous = true;
@@ -217,12 +248,20 @@ const speaking = {
     };
     rec.onerror = e => {
       if (e.error === "no-speech" || e.error === "aborted") return;
+      if (this.media && ["network", "service-not-allowed", "language-not-supported"].includes(e.error)) {
+        // The built-in recogniser is unusable here: keep recording and transcribe at the end instead.
+        useSR = this.live = false;
+        this.rec = null;
+        $("#sp-status").textContent = "Live transcript is not available in this browser. Keep speaking – your answer will be transcribed when you stop.";
+        return;
+      }
       const msg = { "not-allowed": "Microphone access was blocked. Allow the microphone for this site and try again.", "service-not-allowed": "Microphone access was blocked. Allow the microphone for this site and try again.", "audio-capture": "No microphone was found.", "network": "The speech recognition service could not be reached. It needs an internet connection and only works in Google Chrome, Microsoft Edge or Safari – not in Brave, Opera, Firefox or browsers built into other apps." }[e.error] || "Speech recognition error: " + e.error;
       this.stop(msg);
     };
     // Browsers end recognition after a pause; restart while the answer is still running.
     rec.onend = () => { if (this.active && this.rec === rec) { try { rec.start(); } catch {} } };
     try { rec.start(); } catch {}
+    }
 
     this.start = Date.now();
     this.tick = setInterval(() => {
@@ -240,7 +279,8 @@ const speaking = {
         $("#sp-status").textContent =
           this.micErr ? `The microphone could not be opened (${this.micErr}). Check that a microphone is connected and not in use by another app.`
           : this.analyser && this.peak < 0.02 ? "No sound is reaching the browser. The wrong input device may be selected or the mic is muted: check Windows Settings → System → Sound → Input, and the microphone chosen in your browser's site settings."
-          : this.analyser ? "Your microphone is working (see the level bar), but the speech recogniser is returning nothing. Use Google Chrome or Microsoft Edge – it does not work in Brave, Opera, Firefox or in-app browsers."
+          : !this.live ? $("#sp-status").textContent
+          : this.analyser ? "Your microphone is working (see the level bar), but the live recogniser is returning nothing. Keep speaking – your recording will be transcribed when you stop."
           : "Nothing heard yet. Check that your microphone is not muted and that the right input device is selected.";
       }
       if (this.part === 2 && s >= 120) this.stop("Two minutes – time is up.");
@@ -264,10 +304,27 @@ const speaking = {
     $("#sp-rec").classList.remove("rec");
     $("#sp-status").textContent = message || "Answer finished.";
     // Give the recogniser a moment to deliver its last final result.
-    setTimeout(() => this.analyse(secs), 600);
+    setTimeout(() => this.finish(secs), 600);
   },
-  analyse(secs) {
-    const text = ($("#sp-transcript").textContent || "").trim();
+  async finish(secs) {
+    let text = ($("#sp-transcript").textContent || "").trim();
+    if (!text && this.chunks.length) {
+      const say = t => { $("#sp-status").textContent = t; };
+      const btn = $("#sp-rec");
+      btn.disabled = true;
+      say("Transcribing your answer on this device…");
+      try {
+        text = (await whisper.run(new Blob(this.chunks, { type: this.mime }), say)).replace(/\[[^\]]*\]|\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+        say("Answer finished.");
+      } catch (e) {
+        say(`Your answer could not be transcribed in this browser (${e.message}). You can still play it back below.`);
+      }
+      btn.disabled = false;
+      if (this.active) return;
+    }
+    this.report(text, secs);
+  },
+  report(text, secs) {
     $("#sp-transcript").textContent = text;
     const words = text.toLowerCase().match(/[a-z0-9']+/g) || [];
     if (!words.length) {
@@ -438,10 +495,10 @@ $("#dc-form").onsubmit = e => { e.preventDefault(); dictation.check(); };
 
 /* ---------- start ---------- */
 const missing = [];
-if (!SR) missing.push("voice input (use Chrome, Edge or Safari for speaking practice)");
+if (!useSR && !canRecord) missing.push("microphone input");
 if (!tts.ok) missing.push("audio playback");
-$("#support").textContent = missing.length ? "This browser does not support " + missing.join(" or ") + "." : "";
-renderProgress();
+$("#support").textContent = missing.length ? "This browser does not support " + missing.join(" or ") + "."
+  : !useSR ? "In this browser your spoken answers are transcribed after you stop, by a speech model that runs on your device (one-time download of about 80 MB)." : "";renderProgress();
 speaking.setPart(1);
 listening.load(0);
 dictation.next();
