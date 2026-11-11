@@ -146,6 +146,7 @@ const speaking = {
     this.final = "";
     this.active = true;
     this.chunks = [];
+    this.peak = 0; this.warned = false; this.micErr = ""; this.analyser = null;
     $("#sp-audio").hidden = true;
     $("#sp-stats").replaceChildren();
     $("#sp-feedback").replaceChildren();
@@ -170,7 +171,16 @@ const speaking = {
           a.hidden = false;
         };
         this.media.start();
-      } catch { this.media = null; }
+        // Level meter, so the user can see whether sound is reaching the browser at all.
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const an = this.ctx.createAnalyser();
+        an.fftSize = 512;
+        this.ctx.createMediaStreamSource(stream).connect(an);
+        this.buf = new Uint8Array(an.fftSize);
+        this.analyser = an;
+        const track = stream.getAudioTracks()[0];
+        if (track) $("#sp-status").textContent = `Listening… speak now. (Microphone: ${track.label || "default"})`;
+      } catch (e) { this.media = null; this.micErr = e && e.name || "error"; }
     }
 
     const rec = this.rec = new SR();
@@ -187,7 +197,7 @@ const speaking = {
     };
     rec.onerror = e => {
       if (e.error === "no-speech" || e.error === "aborted") return;
-      const msg = { "not-allowed": "Microphone access was blocked. Allow the microphone for this site and try again.", "service-not-allowed": "Microphone access was blocked. Allow the microphone for this site and try again.", "audio-capture": "No microphone was found.", "network": "Speech recognition needs an internet connection." }[e.error] || "Speech recognition error: " + e.error;
+      const msg = { "not-allowed": "Microphone access was blocked. Allow the microphone for this site and try again.", "service-not-allowed": "Microphone access was blocked. Allow the microphone for this site and try again.", "audio-capture": "No microphone was found.", "network": "The speech recognition service could not be reached. It needs an internet connection and only works in Google Chrome, Microsoft Edge or Safari – not in Brave, Opera, Firefox or browsers built into other apps." }[e.error] || "Speech recognition error: " + e.error;
       this.stop(msg);
     };
     // Browsers end recognition after a pause; restart while the answer is still running.
@@ -198,8 +208,23 @@ const speaking = {
     this.tick = setInterval(() => {
       const s = (Date.now() - this.start) / 1000;
       $("#sp-timer").textContent = fmt(s);
+      if (this.analyser) {
+        this.analyser.getByteTimeDomainData(this.buf);
+        let m = 0;
+        for (const v of this.buf) m = Math.max(m, Math.abs(v - 128) / 128);
+        this.peak = Math.max(this.peak, m);
+        $("#sp-meter").style.width = Math.min(100, m * 250) + "%";
+      }
+      if (s > 7 && !this.warned && !$("#sp-transcript").textContent.trim()) {
+        this.warned = true;
+        $("#sp-status").textContent =
+          this.micErr ? `The microphone could not be opened (${this.micErr}). Check that a microphone is connected and not in use by another app.`
+          : this.analyser && this.peak < 0.02 ? "No sound is reaching the browser. The wrong input device may be selected or the mic is muted: check Windows Settings → System → Sound → Input, and the microphone chosen in your browser's site settings."
+          : this.analyser ? "Your microphone is working (see the level bar), but the speech recogniser is returning nothing. Use Google Chrome or Microsoft Edge – it does not work in Brave, Opera, Firefox or in-app browsers."
+          : "Nothing heard yet. Check that your microphone is not muted and that the right input device is selected.";
+      }
       if (this.part === 2 && s >= 120) this.stop("Two minutes – time is up.");
-    }, 250);
+    }, 100);
   },
   stop(message) {
     if (!this.active) return;
@@ -211,6 +236,10 @@ const speaking = {
     try { rec && rec.stop(); } catch {}
     try { this.media && this.media.state !== "inactive" && this.media.stop(); } catch {}
     this.media = null;
+    this.analyser = null;
+    try { this.ctx && this.ctx.close(); } catch {}
+    this.ctx = null;
+    $("#sp-meter").style.width = "0";
     $("#sp-rec").textContent = "🎤 Start answering";
     $("#sp-rec").classList.remove("rec");
     $("#sp-status").textContent = message || "Answer finished.";
