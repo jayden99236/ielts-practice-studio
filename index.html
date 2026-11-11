@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IELTS Practice Studio</title>
+<meta name="description" content="Free IELTS speaking and listening practice with voice input, timed cue cards, listening tests and dictation.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="#home" data-tab="home">IELTS <span>Practice Studio</span></a>
+    <nav aria-label="Sections">
+      <button data-tab="home" class="on">Home</button>
+      <button data-tab="speaking">Speaking</button>
+      <button data-tab="listening">Listening</button>
+      <button data-tab="dictation">Dictation</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- HOME -->
+<section id="home" class="tab on">
+  <h1>Practise IELTS speaking and listening, out loud.</h1>
+  <p class="lead">Answer examiner-style questions with your microphone, get an instant transcript with fluency stats, and train your ear with listening tests and dictation. Everything runs in your browser — nothing is uploaded.</p>
+  <div class="cards">
+    <a class="card" href="#speaking" data-tab="speaking">
+      <h3>Speaking</h3>
+      <p>Parts 1, 2 and 3 with voice input, a timed cue card, and feedback on pace, length and linking words.</p>
+    </a>
+    <a class="card" href="#listening" data-tab="listening">
+      <h3>Listening</h3>
+      <p>Three test-style recordings with form completion, multiple choice and sentence completion.</p>
+    </a>
+    <a class="card" href="#dictation" data-tab="dictation">
+      <h3>Dictation</h3>
+      <p>Hear a sentence, type it, and see exactly which words you missed. Great for numbers and spelling.</p>
+    </a>
+  </div>
+  <h2>Your progress</h2>
+  <div class="stats" id="progress"></div>
+  <p class="note" id="support"></p>
+</section>
+
+<!-- SPEAKING -->
+<section id="speaking" class="tab">
+  <h1>Speaking practice</h1>
+  <div class="row controls">
+    <div class="seg" id="sp-parts" role="group" aria-label="Test part">
+      <button data-part="1" class="on">Part 1</button>
+      <button data-part="2">Part 2</button>
+      <button data-part="3">Part 3</button>
+    </div>
+    <label>Accent
+      <select id="sp-lang">
+        <option value="en-GB">British</option>
+        <option value="en-US">American</option>
+        <option value="en-AU">Australian</option>
+        <option value="en-IN">Indian</option>
+      </select>
+    </label>
+  </div>
+  <p class="note" id="sp-hint"></p>
+
+  <div class="panel">
+    <div class="q-meta" id="sp-topic"></div>
+    <div class="question" id="sp-question"></div>
+    <ul class="cue" id="sp-cue" hidden></ul>
+    <textarea id="sp-notes" rows="3" placeholder="Notes for your 1-minute preparation…" hidden></textarea>
+    <div class="row">
+      <button class="btn ghost" id="sp-hear">🔊 Hear question</button>
+      <button class="btn ghost" id="sp-prep" hidden>⏱ Start 1-min prep</button>
+      <button class="btn primary" id="sp-rec">🎤 Start answering</button>
+      <button class="btn ghost" id="sp-next">Next question →</button>
+      <span class="timer" id="sp-timer">0:00</span>
+    </div>
+    <div class="live" id="sp-status" aria-live="polite"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Your answer</h3>
+    <div class="transcript" id="sp-transcript"><span class="muted">Your words will appear here as you speak.</span></div>
+    <audio id="sp-audio" controls hidden></audio>
+    <div class="stats" id="sp-stats"></div>
+    <ul class="feedback" id="sp-feedback"></ul>
+  </div>
+</section>
+
+<!-- LISTENING -->
+<section id="listening" class="tab">
+  <h1>Listening practice</h1>
+  <div class="row controls">
+    <label>Recording
+      <select id="ls-test"></select>
+    </label>
+    <label>Speed
+      <select id="ls-rate">
+        <option value="0.8">Slow</option>
+        <option value="0.95" selected>Normal</option>
+        <option value="1.1">Fast</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="ls-exam"> Exam mode (play once only)</label>
+  </div>
+  <div class="panel">
+    <div class="q-meta" id="ls-kind"></div>
+    <p id="ls-intro"></p>
+    <div class="row">
+      <button class="btn primary" id="ls-play">▶ Play recording</button>
+      <button class="btn ghost" id="ls-stop">■ Stop</button>
+      <span class="live" id="ls-status" aria-live="polite"></span>
+    </div>
+    <div class="bar"><i id="ls-bar"></i></div>
+  </div>
+  <form class="panel" id="ls-form">
+    <h3>Questions</h3>
+    <ol id="ls-questions"></ol>
+    <div class="row">
+      <button class="btn primary" type="submit">Check answers</button>
+      <button class="btn ghost" type="button" id="ls-script-btn" hidden>Show transcript</button>
+      <strong id="ls-score"></strong>
+    </div>
+  </form>
+  <div class="panel" id="ls-script" hidden></div>
+</section>
+
+<!-- DICTATION -->
+<section id="dictation" class="tab">
+  <h1>Dictation</h1>
+  <p class="note">Listen and type exactly what you hear. Numbers can be written as digits.</p>
+  <div class="panel">
+    <div class="q-meta" id="dc-count"></div>
+    <div class="row">
+      <button class="btn primary" id="dc-play">▶ Play sentence</button>
+      <button class="btn ghost" id="dc-slow">🐢 Play slowly</button>
+    </div>
+    <form id="dc-form">
+      <textarea id="dc-input" rows="3" placeholder="Type what you hear…" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="btn primary" type="submit">Check</button>
+        <button class="btn ghost" type="button" id="dc-next">Next sentence →</button>
+        <strong id="dc-score"></strong>
+      </div>
+    </form>
+    <div class="diff" id="dc-diff"></div>
+  </div>
+</section>
+
+</main>
+<footer class="wrap foot">Independent practice tool. Not affiliated with IELTS, the British Council, IDP or Cambridge. Feedback is a guide, not a band score.</footer>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
