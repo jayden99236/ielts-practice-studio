@@ -14,6 +14,7 @@
     <nav aria-label="Sections">
       <button data-tab="home" class="on">Home</button>
       <button data-tab="speaking">Speaking</button>
+      <button data-tab="repeat">Repeat</button>
       <button data-tab="listening">Listening</button>
       <button data-tab="dictation">Dictation</button>
     </nav>
@@ -30,6 +31,10 @@
     <a class="card" href="#speaking" data-tab="speaking">
       <h3>Speaking</h3>
       <p>Parts 1, 2 and 3 with voice input, a timed cue card, and feedback on pace, length and linking words.</p>
+    </a>
+    <a class="card" href="#repeat" data-tab="repeat">
+      <h3>Listen &amp; repeat</h3>
+      <p>Hear a model sentence, record yourself saying it, then compare the two and see which words were clear.</p>
     </a>
     <a class="card" href="#listening" data-tab="listening">
       <h3>Listening</h3>
@@ -92,6 +97,25 @@
     <audio id="sp-audio" controls hidden></audio>
     <div class="stats" id="sp-stats"></div>
     <ul class="feedback" id="sp-feedback"></ul>
+  </div>
+</section>
+
+<!-- LISTEN & REPEAT -->
+<section id="repeat" class="tab">
+  <h1>Listen &amp; repeat</h1>
+  <p class="note">Train pronunciation and rhythm: listen to the model, record yourself, then compare.</p>
+  <div class="panel">
+    <div class="q-meta" id="rp-count"></div>
+    <div class="question diff" id="rp-text"></div>
+    <div class="row">
+      <button class="btn ghost" id="rp-listen">🔊 Listen</button>
+      <button class="btn ghost" id="rp-slow">🐢 Slowly</button>
+      <button class="btn primary" id="rp-rec">🎤 Record yourself</button>
+      <button class="btn ghost" id="rp-next">Next sentence →</button>
+    </div>
+    <div class="live" id="rp-status" aria-live="polite"></div>
+    <audio id="rp-audio" controls hidden></audio>
+    <strong id="rp-score"></strong>
   </div>
 </section>
 

@@ -26,7 +26,8 @@ function renderProgress() {
     [p.answers || 0, "spoken answers"],
     [fmt(p.speakSecs || 0), "speaking time"],
     [best.length ? `${best.length}/${LISTENING.length}` : "0", "listening tests done"],
-    [p.dictBest != null ? p.dictBest + "%" : "–", "best dictation"]
+    [p.dictBest != null ? p.dictBest + "%" : "–", "best dictation"],
+    [p.repBest != null ? p.repBest + "%" : "–", "best repeat"]
   ];
   $("#progress").replaceChildren(...items.map(([v, l]) => el("div", { className: "stat" }, el("b", { textContent: v }), el("span", { textContent: l }))));
 }
@@ -38,6 +39,7 @@ function showTab(id) {
   $$("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === id));
   tts.stop();
   if (speaking.active) speaking.stop();
+  if (repeat.active) repeat.stop();
   window.scrollTo(0, 0);
 }
 document.addEventListener("click", e => {
@@ -516,6 +518,118 @@ $("#dc-slow").onclick = () => dictation.play(0.65);
 $("#dc-next").onclick = () => dictation.next();
 $("#dc-form").onsubmit = e => { e.preventDefault(); dictation.check(); };
 
+/* ---------- listen & repeat ---------- */
+// Which words of `want` appear, in order, in `got` (longest common subsequence).
+function heard(want, got) {
+  const m = want.length, n = got.length;
+  const d = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--)
+    d[i][j] = want[i] === got[j] ? d[i + 1][j + 1] + 1 : Math.max(d[i + 1][j], d[i][j + 1]);
+  const hit = new Array(m).fill(false);
+  for (let i = 0, j = 0; i < m && j < n;) {
+    if (want[i] === got[j]) { hit[i] = true; i++; j++; }
+    else if (d[i + 1][j] >= d[i][j + 1]) i++; else j++;
+  }
+  return hit;
+}
+const repeat = {
+  order: [], pos: -1, active: false, media: null, rec: null, final: "", chunks: [], timer: null,
+  say(t) { $("#rp-status").textContent = t; },
+  sentence() { return REPEAT[this.order[this.pos]]; },
+  next() {
+    if (this.active) this.stop();
+    tts.stop();
+    if (++this.pos >= this.order.length) {
+      this.order = REPEAT.map((_, i) => i).sort(() => Math.random() - 0.5);
+      this.pos = 0;
+    }
+    $("#rp-count").textContent = `Sentence ${this.pos + 1} of ${this.order.length}`;
+    $("#rp-text").replaceChildren(this.sentence());
+    $("#rp-audio").hidden = true;
+    $("#rp-score").textContent = "";
+    this.say("Listen first, then record yourself saying the same sentence.");
+  },
+  listen(rate) { tts.play([["A", this.sentence()]], { rate, lang: $("#sp-lang").value }); },
+  async start() {
+    if (!canRecord) { this.say("This browser cannot record from the microphone."); return; }
+    tts.stop();
+    this.active = true;
+    this.chunks = [];
+    this.final = "";
+    $("#rp-score").textContent = "";
+    $("#rp-text").replaceChildren(this.sentence());
+    let stream;
+    try {
+      const id = $("#sp-mic").value;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true });
+    } catch (e) {
+      this.active = false;
+      this.say(e.name === "NotAllowedError" ? "Microphone blocked. Allow it for this site and try again." : `The microphone could not be opened (${e.name}).`);
+      return;
+    }
+    if (!this.active) { stream.getTracks().forEach(t => t.stop()); return; }
+    const mr = this.media = new MediaRecorder(stream);
+    mr.ondataavailable = e => e.data.size && this.chunks.push(e.data);
+    mr.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (!this.chunks.length) { this.say("Nothing was recorded. Try again."); return; }
+      const blob = new Blob(this.chunks, { type: mr.mimeType });
+      const a = $("#rp-audio");
+      if (a.src) URL.revokeObjectURL(a.src);
+      a.src = URL.createObjectURL(blob);
+      a.hidden = false;
+      setTimeout(() => this.score(blob), 500); // let the live recogniser deliver its last words
+    };
+    mr.start();
+    // Live recognition runs alongside the recording where the browser has it (desktop Chrome, Edge, Safari).
+    if (useSR && !isMobile) {
+      const rec = this.rec = new SR();
+      rec.lang = $("#sp-lang").value;
+      rec.continuous = true;
+      rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) this.final += e.results[i][0].transcript + " "; };
+      rec.onerror = e => { if (["network", "service-not-allowed", "language-not-supported"].includes(e.error)) useSR = false; };
+      try { rec.start(); } catch {}
+    }
+    $("#rp-rec").textContent = "■ Stop";
+    $("#rp-rec").classList.add("rec");
+    this.say("Recording… say the sentence, then press Stop.");
+    this.timer = setTimeout(() => this.stop(), 15000);
+  },
+  stop() {
+    if (!this.active) return;
+    this.active = false;
+    clearTimeout(this.timer);
+    try { this.rec && this.rec.stop(); } catch {}
+    this.rec = null;
+    try { this.media && this.media.state !== "inactive" && this.media.stop(); } catch {}
+    this.media = null;
+    $("#rp-rec").textContent = "🎤 Record yourself";
+    $("#rp-rec").classList.remove("rec");
+  },
+  async score(blob) {
+    const target = this.sentence();
+    let text = this.final.trim();
+    if (!text && !useSR) {
+      $("#rp-rec").disabled = true;
+      try { text = (await whisper.run(blob, t => this.say(t))).replace(/\[[^\]]*\]|\([^)]*\)/g, " ").trim(); } catch {}
+      $("#rp-rec").disabled = false;
+      if (target !== this.sentence()) return; // moved on while transcribing
+    }
+    if (!text) { this.say("Now play your recording and the model sentence, and compare them by ear."); return; }
+    const want = toks(target), hit = heard(want, toks(text));
+    const pct = Math.round(hit.filter(Boolean).length / want.length * 100);
+    const shown = target.replace(/[.,;]/g, "").split(/\s+/);
+    $("#rp-text").replaceChildren(...shown.map((w, i) => el("span", { className: "tok " + (hit[i] ? "ok" : "no"), textContent: w })));
+    $("#rp-score").textContent = pct === 100 ? "Every word was clear – 100%" : `${pct}% of the words were understood`;
+    this.say(pct === 100 ? "Now compare the rhythm and stress of your recording with the model." : "Underlined words were not recognised. Listen to the model again and compare with your recording.");
+    store.set({ repBest: Math.max(pct, store.get().repBest || 0) });
+  }
+};
+$("#rp-listen").onclick = () => repeat.listen(0.95);
+$("#rp-slow").onclick = () => repeat.listen(0.65);
+$("#rp-rec").onclick = () => repeat.active ? repeat.stop() : repeat.start();
+$("#rp-next").onclick = () => repeat.next();
+
 /* ---------- start ---------- */
 const missing = [];
 if (!useSR && !canRecord) missing.push("microphone input");
@@ -528,5 +642,6 @@ renderProgress();
 speaking.setPart(1);
 listening.load(0);
 dictation.next();
+repeat.next();
 showTab(location.hash.slice(1) || "home");
 })();

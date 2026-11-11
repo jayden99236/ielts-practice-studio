@@ -143,3 +143,21 @@ const DICTATION = [
   "There is a ten percent discount for groups of twelve or more.",
   "Regular exercise improves both memory and concentration."
 ];
+
+// Listen & repeat: natural spoken sentences that are useful in the speaking test.
+const REPEAT = [
+  "In my opinion, the advantages outweigh the disadvantages.",
+  "I'd say it depends on the situation.",
+  "That's an interesting question; I've never really thought about it.",
+  "On the one hand it saves time, but on the other hand it can be expensive.",
+  "What I enjoy most about my job is working with other people.",
+  "I grew up in a small town near the coast.",
+  "If I had more free time, I would learn to play the guitar.",
+  "It has changed a great deal over the last ten years.",
+  "As far as I'm concerned, education should be free for everyone.",
+  "I'm not entirely sure, but I think it was about three years ago.",
+  "The main reason is that people are much busier than they used to be.",
+  "To be honest, I prefer reading to watching television.",
+  "There are several reasons why this has become more popular.",
+  "I would definitely recommend it to anyone who enjoys history."
+];
